@@ -1,0 +1,1281 @@
+ 
+  library(elmNN)  
+  library(ggplot2)
+  library(survival)
+  library(survminer)
+  library(survcomp)
+  library(LSSDsc)
+  library(SNFtool)
+  #library(SDCC)
+  library(mclust)
+  library(rhdf5)
+  library(reshape2)
+  
+  library(ggthemes)
+  library(splatter)
+  
+  library(cowplot)
+  library(ggsci)
+  library(reshape2)
+  library(NMF)
+  
+  library(PINSPlus)
+  library(Spectrum)
+  library(survival)
+  library(survminer)
+  library(CancerSubtypes)
+  library(ConsensusClusterPlus)
+  extrafont::loadfonts()
+  
+  ##simulation
+    
+  library(SingleCellExperiment) 
+   
+  library(splatter)
+  
+  set.seed(1111)
+  
+  params<-newSplatParams(nGenes=10000,batchCells=1000)
+  
+  sim<-splatSimulateGroups(params,group.prob = c(rep(0.1,10)), verbose = TRUE)
+  #c(0.05,0.2,0.15,0.05,0.05,0.025,0.25,0.10,0.1,0.025)
+  cs<-counts(sim)
+  
+  dd<-t(cs)
+  
+  simi<-lapply(seq(from=50,to=2000,by=50), function(i){
+    set.seed(11111)
+    cat(i,"\n")
+    model <- elmtrain.default(dd,dd,data=d, nhid=i, actfun="purelin")
+    mpw<-model$inpweight
+    mbas <-model$biashid
+    # mow  <-model$outweight
+    cot<-(dd %*% t(mpw)+mbas)
+    A<- affs(cot)
+    sd<-self.diffusion(A,4)
+    sc<- spec.clu(sd,10)
+    nmi<-calNMI(sc,sim$Group)
+    
+    ari<-adjustedRandIndex(sim$Group,sc)
+    
+    x<-c(nmi,ari)
+    x
+    #nmi
+    
+  }
+  )
+  
+  dr<-do.call(rbind,simi)
+  
+  col1<-pal_jama("default")(2)
+  itr<-data.frame(dr[,1],dr[,2],seq(from=50,to=2000,by=50))
+  
+  colnames(itr)<-c("NMI","ARI","HN")
+  
+  mdd<-melt(itr,id="HN")
+  
+  ggsci::pal_nejm("default")(2)
+  
+  ggplot(mdd, aes(x = HN, y = value)) + geom_line(aes(color = variable)) + geom_point(color="black")+
+    facet_grid(variable ~ ., scales = "free_y")+theme_classic()+theme(
+      legend.position = "none",axis.title.y=element_blank())+labs(x="No. of hidden nodes")+ scale_color_manual(values=c("#BC3C29FF",'#0072B5FF'))
+  
+  ###cancer subtyping
+  load("D:/dx/dx/new paper/ELMCC/ELMCC2/data/CRC_GSE39582.raw.RData")
+  
+  colon582<-t(GSE39582_ge.syms)
+  
+  mar<- apply(colon582,2,mad)
+  
+  m582 <- colon582[, mar>0.5]
+  
+  mcr582<-apply(m582,2,function(x)(x-mean(x))/sd(x))
+  
+  
+  ptm <- proc.time()
+  set.seed(11111)
+  
+  model2 <- elmtrain.default(mcr582,mcr582,data=mcr582, nhid=1650, actfun="purelin")
+  mpw<-model2$inpweight
+  mbas <-model2$biashid
+  # mow  <-model$outweight
+  cot582<-(mcr582 %*% t(mpw)+mbas)
+  
+  A_582<- affs(cot582)
+  
+  sd_582<-self.diffusion(A_582,4)
+  
+  lab_582<- spec.clu(sd_582,5)
+  
+  proc.time() - ptm
+  
+  
+  sil=silhouette_SimilarityMatrix(lab_582, sd_582)
+  plot(sil)
+  
+  gy<-es.num.graph(sd_582,2:8)  
+  
+  df<-data.frame(gy[[2]][2:7],c(3:8))
+  colnames(df)<-c("NMI","T")
+  
+  ggplot(df,aes(T,NMI))+geom_line(color="steelblue",size=1)+labs(y="Seperation cost",x="Number of Clusters")+theme_classic()
+  
+  
+  
+  # A1_582<- affs(mcr582)
+  # sd1_582<-self.diffusion(A1_582,4)
+  # lab1_582<- spec.clu(sd1_582,4)
+  # km582<- kmeans(cot582,4)
+  # lab582_v<-km582$cluster
+  time <- as.numeric(GSE39582_info$rfs.delay)
+  dfs <- as.numeric(GSE39582_info$rfs.event)
+  
+  clin <- Surv(time, dfs)
+  
+  labs <- factor(lab_582)
+  
+  library(extrafont)
+  
+  #font_import()
+  
+  loadfonts(device = "postscript")
+  
+  pdf(file = "D:/dx/ELM-AE/GSE39582_surv.pdf",width = 5,height = 6)
+  
+  plot_KMCurve(clin, labs,palette = "jco",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+ 
+  dev.off()
+  
+  ##factor heatmap
+  
+  GSE39582_info$elm <- lab_582
+  #GSE39582_info$elm <- cs
+  
+  GSE39582_info1 <- GSE39582_info[with(GSE39582_info,order(GSE39582_info$elm)),]
+  
+  
+  dfoo <- t(as.matrix(data.frame(
+    
+    Class=c(rep("1",nrow(GSE39582_info1[which(GSE39582_info1$elm==1),])),rep("2",nrow(GSE39582_info1[which(GSE39582_info1$elm==2),])),rep("3",nrow(GSE39582_info1[which(GSE39582_info1$elm==3),])),rep("4",nrow(GSE39582_info1[which(GSE39582_info1$elm==4),])),rep("5",nrow(GSE39582_info1[which(GSE39582_info1$elm==5),]))),
+    Relapse=as.vector(ifelse(GSE39582_info1$rfs.event==1,"6","  ")),
+    MSI=as.vector(ifelse(GSE39582_info1$mmr.status==" dMMR","6","  ")),
+    CIMP=as.vector(ifelse(GSE39582_info1$cimp.status==" +","6","  ")),
+    TP53=as.vector(ifelse(GSE39582_info1$tp53.mutation==" M","6","  ")),
+    KRAS=as.vector(ifelse(GSE39582_info1$kras.mutation==" M","6","  ")),
+    BRAF=as.vector(ifelse(GSE39582_info1$braf.mutation==" M","6","  ")))))
+  
+  
+  dfo<-apply(dfoo,2,function(x) as.numeric(x))
+  
+  dfo[is.na(dfo)]<-0
+  
+  
+  row.names(dfo)<-c("Class","Relapse","MSI","CIMP","TP53","KRAS","BRAF")
+  pdf(file = "D:/dx/ELM-AE/figure/factor.pdf",width = 8,height =4)
+  image(t(dfo[nrow(dfo):1,]),col=c("white","#0073C2FF","#EFC000FF","#868686FF","#CD534CFF","#7AA6DCFF","black"))
+  dev.off()
+  ###network
+  
+  tim<-time
+  
+  tim[is.na(tim)]<-0
+  
+  tim[which(tim==0)]<- min(tim)
+  
+  tim[tim>80]<-80
+  tim[tim<10]<-10
+  
+  #tim<-log2(1+tim)
+  
+  library(igraph)
+  library(RedeR)
+  rdp<-RedPort()
+  calld(rdp)
+  #axfu<- network.diffusion(axn,i)
+  axfu<-sd
+  row.names(axfu)<-paste0("n",c(1:nrow(axfu)))
+  colnames(axfu)<-paste0("n",c(1:nrow(axfu)))
+  lab<-as.integer(lab)
+  names(lab)<-row.names(axfu)
+  #dl<-dA
+  # dl<- -log10(dA)
+  # diag(dl)<-0
+  # dl[dl>2]<-0
+  dl<-axfu
+  dl<- -log10(axfu)
+  # diag(dl)<-0
+  dl[dl>1.45]<-0
+  gmx<-graph.adjacency(dl,mode="undirected",weighted=TRUE,diag=FALSE)
+  #gmi<- igraph_to_networkD3(gmx)
+  Var1 <- ggsci::pal_jco("default")(5)
+  # D3_network_LM <- networkD3::forceNetwork(Links = gmi$links,Nodes = gmi$nodes,NodeID =V(gmx)$name)
+  V(gmx)[names(lab[which(lab==1)])]$color  <-Var1[1]
+  V(gmx)[names(lab[which(lab==2)])]$color  <-Var1[2]
+  V(gmx)[names(lab[which(lab==3)])]$color  <-Var1[3]
+  V(gmx)[names(lab[which(lab==4)])]$color  <-Var1[4]
+  V(gmx)[names(lab[which(lab==5)])]$color  <-Var1[5]
+  V(gmx)$size<- tim/2
+  # E(gmx)$edgeWidth  <- ew*2
+  # #ew[which(ew<0.1)]<-0.1
+  # E(gmx)[names(lab[which(lab==1)])]$edgeWidth  <- 1
+  # E(gmx)[names(lab[which(lab==2)])]$edgeWidth  <- 1
+  addGraph(rdp, gmx)
+
+  relax(rdp)
+  
+  resetd(rdp)
+  ##...........................................................
+  
+  #diag(sd_582)<-mean(sd_582)
+  
+  cdc<-cor(t(mcr582),method = "pearson")
+  diag(cdc)<-mean(cdc)
+  
+  group<-lab_582
+  num=length(unique(group))
+  annotation=data.frame(group=as.factor(group))
+  
+  # Var1 = c(brewer.pal(n = 10, name = "Paired")[1:(num+1)])
+  Var1<-c(pal_jco("default")(5))
+  names(Var1) = sort(unique(group))
+  ann_colors =  list(group=Var1)
+  ind=order(group)
+  
+  consensusmap(dmm,color=c("tomato4","lightyellow"),Rowv=ind,Colv=ind,main = "",
+               annCol = annotation,annColors=ann_colors,
+               labRow ="Sample", labCol = "Sample",scale="none")
+  
+  a<-matrix(1:8,2,4)
+  
+  dm<-dist(mcr582,method = "euclidean",upper = TRUE)
+  
+  dmm<-as.matrix(dm)
+  diag(dmm)<-mean(dmm)
+  
+  
+  ##Spectrum.......................................
+  #res <- Spectrum(brain[[1]][,1:50])
+  
+  ptm <- proc.time()
+  mcr<-t(mcr582)
+  res<-Spectrum(mcr)
+  proc.time()-ptm 
+  
+  
+  sil=silhouette_SimilarityMatrix(res$assignments, sd_582)
+  plot(sil)
+  
+  
+  time <- as.numeric(GSE39582_info$rfs.delay)
+  dfs <- as.numeric(GSE39582_info$rfs.event)
+  
+  clin <- Surv(time, dfs)
+  
+  labss <- factor(res$assignments)
+  
+  library(extrafont)
+  #font_import()
+  pdf(file = "D:/dx/ELM-AE/figure/GSE39582_surv_spectrum.pdf",width = 5,height = 6)
+  
+  plot_KMCurve(clin, labss,palette = "jco",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  dev.off()
+  
+  ##PINSPlus
+  ptm <- proc.time()
+  result <- PerturbationClustering(data = mcr582, verbose = FALSE)
+  
+  proc.time()-ptm 
+  
+  
+  sil=silhouette_SimilarityMatrix(result$cluster, sd_582)
+  plot(sil)
+  
+  lab_pin <- factor(result$cluster)
+  
+  library(extrafont)
+  #font_import()
+  pdf(file = "D:/dx/ELM-AE/figure/GSE39582_surv_pins.pdf",width = 5,height = 6)
+  
+  plot_KMCurve(clin, lab_pin,palette = "jco",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  dev.off()
+  ##consensus 
+  ptm <- proc.time()
+  gcon<-ConsensusClusterPlus(dist(mcr582), maxK = 6,clusterAlg = "km",seed=1481443338)
+  proc.time()-ptm 
+  
+  labc <- gcon[[5]]$consensusClass
+  
+  sil=silhouette_SimilarityMatrix(labc, sd_582)
+  plot(sil)
+  
+  
+  pdf(file = "D:/dx/ELM-AE/figure/GSE39582_surv_consensus.pdf",width = 5,height = 6)
+  plot_KMCurve(clin, labc,palette = "jco",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  dev.off()
+
+  ##NMF
+  ptm <- proc.time()
+  tepp<-t(m582)
+  nmf_co<- ExecuteCNMF(tepp,clusterNum=5,nrun=5)
+  proc.time()-ptm 
+  
+  sil=silhouette_SimilarityMatrix(nmf_co$group, nmf_co$distanceMatrix)
+  plot(sil)
+  
+  plot_KMCurve(clin, nmf_co$group,palette = "jco",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  dissE <- affs(mcr582)
+  
+  sill=silhouette_SimilarityMatrix(as.integer(labss), sd_582)
+  plot(sill)
+  
+  # disse<-daisy(mcr582)
+  # sk <- silhouette(as.integer(labs), sd_582)
+  # plot(sk)
+  #dissE <- daisy(pm$x[,1:3],metric = "euclidean")
+  sk <- silhouette(labc,dissE)
+  plot(sk)
+  ##.................................
+  # um<-umap::umap(sd_582)
+  # #ftt3<-data.frame(um$layout[,1],um$layout[,2],s3$sc3_6_clusters)
+
+  um<-umap::umap(sd_582)
+  #ftt3<-data.frame(um$layout[,1],um$layout[,2],s3$sc3_6_clusters)
+  ftt3<-data.frame(um$layout[,1],um$layout[,2],lab_582)
+  colnames(ftt3)<-c("u1","u2","lab")
+  ggplot(ftt3, aes(ftt3$u1,ftt3$u2))+geom_point(aes(colour = factor(ftt3$lab)))+theme_classic()+labs(x="ELM-AE",y="ELM-AE")+theme(legend.position = "none")
+
+  ## gastric................................
+  
+  load("D:/dx/ELM-AE/GSE62254.raw.Rdata")
+  
+  
+  #ga254<-t(GSE62254_ge.syms)
+  
+  
+  tep<-t(GSE62254_ge.syms)
+  # 
+  # mar<- apply(tep,2,mad)
+  # 
+  # #mrnap <- tep[, mar>0.75]
+  # mrnap <- tep[, mar>0.1]
+  
+  #ga254<-apply(tep,2,function(x){(x-mean(x))/sd(x)})
+
+  ga<-apply(tep,2,function(x) (x-mean(x))/sd(x))
+
+  ptm <- proc.time()
+  set.seed(11111)
+  
+  model3 <- elmtrain.default(ga,ga,data=ga, nhid=1650, actfun="purelin")
+  mpw<-model3$inpweight
+  mbas <-model3$biashid
+  # mow  <-model$outweight
+  cot254<-(ga %*% t(mpw)+mbas)
+  
+  A_254<- affs(cot254)
+  
+  sd_254<-self.diffusion(A_254,4)
+  
+  lab_254<- spec.clu(sd_254,7)
+  proc.time()-ptm  
+  
+  
+  sill=silhouette_SimilarityMatrix(as.integer(lab_254), sd_254)
+  plot(sill)
+  
+  
+  load("D:/dx/ELM-AE/GSE254clic.RData")
+  
+  time<-as.numeric(GSE254clic$DFS)
+  event<-as.numeric(GSE254clic$DFS_event)
+  
+  clins <- Surv(time, event)
+  
+  labg <- factor(lab_254)
+  
+
+  pdf(file = "D:/dx/ELM-AE/figure/ga_surv_ELM-AE.pdf",width = 5,height = 6)
+  
+  plot_KMCurve(clins, labg,palette = "lanonc",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  dev.off()
+  #matrix............................................................
+
+  gy<-es.num.graph(sd_254,2:8)  
+  
+  df<-data.frame(gy[[2]],c(2:(length(gy[[2]])+1)))
+  colnames(df)<-c("NMI","T")
+  
+  ggplot(df,aes(T,NMI))+geom_line(color="steelblue",size=1)+labs(y="Seperation cost",x="Number of Clusters")+theme_classic()
+  
+  #diag(sd_254)<-mean(sd_254)
+  
+  cdc<-cor(t(ga),method = "spearman")
+  diag(cdc)<-mean(cdc)
+  # 
+  group<-lab_254
+  num=length(unique(group))
+  annotation=data.frame(group=as.factor(group))
+  
+  # Var1 = c(brewer.pal(n = 10, name = "Paired")[1:(num+1)])
+  Var1<-c(pal_jco("default")(7))
+  names(Var1) = sort(unique(group))
+  ann_colors =  list(group=Var1)
+  ind=order(group)
+  
+  consensusmap(dmm,color=c("tomato4","lightyellow"),Rowv=ind,Colv=ind,main = "",
+               annCol = annotation,annColors=ann_colors,
+               labRow ="Sample", labCol = "Sample",scale="none")
+  
+  
+  dm<-dist(ga,method = "euclidean",upper = TRUE)
+  
+  dmm<-as.matrix(dm)
+  diag(dmm)<-mean(dmm)
+  
+  ###spectrum......................................
+  ptm <- proc.time()
+  gr<-t(ga)
+  reg<-Spectrum(gr)
+  proc.time()-ptm 
+  
+  es.num.graph(reg$similarity_matrix,3:8)
+  
+  spc<-spec.clu(reg$similarity_matrix,7)
+  
+  
+  labgs <- factor(reg$assignments)
+  
+  
+  sill=silhouette_SimilarityMatrix(as.integer(spc),reg$similarity_matrix)
+  plot(sill)
+  
+  
+  pdf(file = "D:/dx/ELM-AE/figure/Ga_surv_spectrum.pdf",width = 5,height = 6)
+  
+  plot_KMCurve(clins, spc,palette = "lanonc",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  dev.off()
+  
+  ptm <- proc.time()
+  resultg <- PerturbationClustering(data = ga, kMin = 4,kMax = 8,,verbose = FALSE)
+  proc.time()-ptm 
+  
+  lab_ping <- factor(resultg$cluster)
+  
+  sill=silhouette_SimilarityMatrix(as.integer(lab_ping),sd_254)
+  plot(sill)
+  
+  
+  pdf(file = "D:/dx/ELM-AE/figure/Ga_surv_pins.pdf",width = 5,height = 6)
+  plot_KMCurve(clins, lab_ping,palette = "lanonc",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  dev.off()
+  
+  ##consensus 
+  pdf(file = "D:/coms.pdf",width = 5,height = 5)
+  
+  ptm <- proc.time()
+  gcong<-ConsensusClusterPlus(dist(ga), maxK = 8,clusterAlg = "km",seed=1481443338)
+  proc.time()-ptm 
+  
+  dev.off()
+  
+  
+  
+  labcg <- gcong[[5]]$consensusClass
+  
+  sill=silhouette_SimilarityMatrix(as.integer(labcg),sd_254)
+  plot(sill)
+  
+  pdf(file = "D:/dx/ELM-AE/figure/Ga_surv_consensus.pdf",width = 5,height = 6)
+  plot_KMCurve(clins, labcg,palette = "lanonc",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  dev.off()
+  
+  ptm <- proc.time()
+  nmf_ga<- ExecuteCNMF(GSE62254_ge.syms,clusterNum=5,nrun=5)
+  proc.time()-ptm 
+  
+  
+  sill=silhouette_SimilarityMatrix(as.integer(nmf_ga$group),nmf_ga$distanceMatrix)
+  plot(sill)
+  
+  
+  plot_KMCurve(clins, nmf_ga$group,palette = "lanonc",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  ##ovrian..........................................
+ 
+  # diag(A_582)<-mean(A_582)
+  # 
+  # image(A_582)
+  # 
+  ##Ovarian
+  load("D:/dx/ELM-AE/OV_GSE26712.raw.RData")
+  #load("D:/dx/SD/RData/OV_GSE26712.raw.RData")
+  tep<-t(GSE26712_ge.syms)
+
+  mar<- apply(tep,2,mad)
+
+  #mrnap <- tep[, mar>0.75]
+  mrnap <- tep[, mar>0.5]
+  #
+  otcga<-apply(mrnap,2,function(x){(x-mean(x))/sd(x)})
+
+  #otcga<-tep
+
+  color <- c("darkgreen","darkblue","black","red3")
+
+  #for (i in 1:100) {
+  ptm <- proc.time()
+  set.seed(8)
+
+  model4 <- elmtrain.default(otcga,otcga,data=otcga, nhid=1650, actfun="purelin")
+  mpw<-model4$inpweight
+  mbas <-model4$biashid
+  # mow  <-model$outweight
+  coto<-(otcga %*% t(mpw)+mbas)
+
+  A_o<- affs(coto)
+
+  sd_o<-self.diffusion(A_o,4)
+
+  lab_o<- spec.clu(sd_o,6)
+  
+  proc.time()-ptm 
+
+  lab_o <- factor(lab_o)
+  
+  gy<-es.num.graph(A_o,3:8)  
+  
+  df<-data.frame(gy[[2]],c(3:8))
+  colnames(df)<-c("NMI","T")
+  
+  ggplot(df,aes(T,NMI))+geom_line(color="steelblue",size=1)+labs(y="Seperation cost",x="Number of Clusters")+theme_classic()
+  
+  #amo<-aod_lab
+  # amo<-lab_o
+  # names(amo)<-rownames(otcga)
+  # 
+  # infoo <- TCGA_info[!is.na(as.numeric(TCGA_info$days_to_death)),]
+  # 
+  # infoo <- infoo[!is.na(as.numeric(infoo$vital_status)),]
+  # 
+  # amno<-amo[intersect(names(amo),rownames(infoo))]
+  # 
+  # Ov_time <- as.numeric(infoo$days_to_death)
+  # Ov_os <- as.numeric(infoo$vital_status)
+  
+  time712 <- as.numeric(GSE26712_info$`survival years`)
+  
+  dfs712 <- as.numeric(GSE26712_info$status)
+  
+  
+  cling <- Surv(time712, dfs712)
+  
+  k<-plotsu(cling,lab_o)
+  cat(i,k,"\n")
+  
+  #}
+  
+  sill=silhouette_SimilarityMatrix(as.integer(lab_o),sd_o)
+  plot(sill)
+  
+
+  #pdf(file = "D:/dx/ELM-AE/figure/GSE39582_surv_spectrum.pdf",width = 5,height = 6)
+
+  plot_KMCurve(cling,lab_o,palette = "lanonc",xlab = "Follow up(Months)", ylab = "DFS(pro.)",risk.table = T)
+
+  dev.off()
+  
+  
+  ptm <- proc.time()
+  tepp<-t(mrnap)
+  nmf_o<- ExecuteCNMF(tepp,clusterNum=6,nrun=5)
+  proc.time()-ptm 
+  
+  sil=silhouette_SimilarityMatrix(nmf_o$group, nmf_o$distanceMatrix)
+  plot(sil)
+  
+  plot_KMCurve(cling, nmf_o$group,palette = "jco",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+
+  ptm <- proc.time()
+  gro<-t(otcga)
+  reo<-Spectrum(gro)
+  proc.time()-ptm 
+  
+  labgo <- factor(reo$assignments)
+  
+  
+  sill=silhouette_SimilarityMatrix(as.integer(labgo),reo$similarity_matrix)
+  plot(sill)
+  
+  plot_KMCurve(cling, labgo,palette = "jco",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  
+  ptm <- proc.time()
+  resulto <- PerturbationClustering(data = otcga, verbose = FALSE)
+  proc.time()-ptm 
+  
+  lab_pino <- factor(resulto$cluster)
+  
+  sill=silhouette_SimilarityMatrix(as.integer(lab_pino),sd_254)
+  plot(sill)
+  
+  plot_KMCurve(cling, lab_pino,palette = "jco",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+ 
+  
+  ptm <- proc.time()
+  gcono<-ConsensusClusterPlus(dist(otcga), maxK = 8,clusterAlg = "km",seed=1481443338)
+  proc.time()-ptm 
+
+  
+  
+  labcono <- gcono[[6]]$consensusClass
+  
+  sill=silhouette_SimilarityMatrix(as.integer(labcono),gcono[[6]]$consensusMatrix)
+  plot(sill)
+  
+  
+  labcono <- gcono[[6]]$consensusClass
+  
+  plot_KMCurve(cling, labcono,palette = "jco",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  
+  #diag(sd_o)<-mean(sd_o)
+  # cdc<-cor(t(otcga),method = "pearson")
+  # diag(cdc)<-mean(cdc)
+  # # 
+  group<-lab_o
+  num=length(unique(group))
+  annotation=data.frame(group=as.factor(group))
+  
+  # Var1 = c(brewer.pal(n = 10, name = "Paired")[1:(num+1)])
+  Var1<-c(pal_jco("default")(6))
+  names(Var1) = sort(unique(group))
+  ann_colors =  list(group=Var1)
+  ind=order(group)
+  
+  consensusmap(dmmo,color=c("tomato4","lightyellow"),Rowv=ind,Colv=ind,main = "",
+               annCol = annotation,annColors=ann_colors,
+               labRow ="Sample", labCol = "Sample",scale="none")
+  
+
+  dmo<-dist(otcga,method = "euclidean",upper = TRUE)
+  
+  dmmo<-as.matrix(dmo)
+  diag(dmmo)<-mean(dmmo)
+  
+  ##breast...........................................
+  load("D:/dx/ELM-AE/BRCA_data20200315/TCGA_BRCA_exp.RData")
+  
+  brca_info<-read.csv("D:/dx/ELM-AE/BRCA_data20200315/brca_clin_all.csv")
+  rownames(brca_info)<-brca_info$sample_ID
+  
+  tcga_brca_info<-brca_info[row.names(TCGA_BRCA_exp),]
+  
+  tg_br<-TCGA_BRCA_exp
+  
+  mar<- apply(tg_br,2,mad)
+  
+  tg_br <- tg_br[, mar>0.5]
+  
+  tg_brr<-apply(tg_br,2,function(x)(x-mean(x))/sd(x))
+  
+  
+  #for (i in 1:10) {
+  
+  ptm <- proc.time()
+  
+  set.seed(1)
+  
+  model2 <- elmtrain.default(tg_brr,tg_brr,data=tg_brr, nhid=1650, actfun="purelin")
+  mpw<-model2$inpweight
+  mbas <-model2$biashid
+  # mow  <-model$outweight
+  cot_br<-(tg_brr %*% t(mpw)+mbas)
+  
+  A_br<- affs(cot_br)
+  
+  sd_br<-self.diffusion(A_br,4)
+  
+  lab_br<- spec.clu(sd_br,6)
+  
+  proc.time() - ptm
+  time_br<-as.numeric(tcga_brca_info$dfs_month)
+  dfs_br<-as.numeric(tcga_brca_info$dfs_event)
+  clinbr <- Surv(time_br, dfs_br)
+  #lab_br <- factor(lab_br)
+  # k<- plotsu(clinbr, lab_br)
+  # 
+  # cat(i,k,"\n")
+
+  #}
+  gy<-es.num.graph(sd_br,2:8)  
+  
+  df<-data.frame(gy[[2]][3:7],c(4:(length(gy[[2]])+1)))
+  colnames(df)<-c("NMI","T")
+  
+  ggplot(df,aes(T,NMI))+geom_line(color="steelblue",size=1)+labs(y="Seperation cost",x="Number of Clusters")+theme_classic()
+  
+  
+  sill=silhouette_SimilarityMatrix(as.integer(lab_spe_br),sd_br)
+  plot(sill)
+  
+  
+  plot_KMCurve(clinbr, lab_br,palette = "lanonc",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  
+  plotsu<-function(clinical, labels){
+    
+    obj <- clinical ~ labels
+    surv <- survival::survfit(obj)
+    survstats <- survival::survdiff(obj)
+    survstats$p.value <- 1 - pchisq(survstats$chisq, length(survstats$n) -
+                                      1)
+    
+    return(survstats$p.value)
+    
+  }
+  
+  pdf(file = "D:/dx/ELM-AE/figure/br_surv_ELM-AE.pdf",width = 5,height = 6)
+  
+  plot_KMCurve(clinbr, lab_br,palette = "lanonc",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  dev.off()
+  
+  
+  ptm <- proc.time()
+  mbr<-t(tg_brr)
+  resb<-Spectrum(mbr)
+  proc.time() - ptm
+  
+  sill=silhouette_SimilarityMatrix(as.integer(kmb$cluster),resb$similarity_matrix)
+  plot(sill)
+  
+   
+  lab_spe_br <- factor(resb$assignments)
+  
+  kmb<-kmeans(resb$similarity_matrix,6)
+  
+  library(extrafont)
+  #font_import()
+  pdf(file = "D:/dx/ELM-AE/figure/br_surv_spectrum.pdf",width = 5,height = 6)
+  
+  plot_KMCurve(clinbr, kmb$cluster,palette = "jco",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  dev.off()
+  
+  
+  ptm <- proc.time()
+  resultb <- PerturbationClustering(data = tg_brr,  kMin = 4,kMax = 8, 
+                                    clusteringMethod = "kmeans")
+  proc.time() - ptm
+  
+  lab_pinb <- factor(resultb$cluster)
+  
+  sill=silhouette_SimilarityMatrix(as.integer(resultb$cluster),sd_br)
+  plot(sill)
+  
+  
+  
+  
+  library(extrafont)
+  #font_import()
+  pdf(file = "D:/dx/ELM-AE/figure/br_surv_pins.pdf",width = 5,height = 6)
+  
+  plot_KMCurve(clinbr, lab_pinb,palette = "jco",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  dev.off()
+  ##consensus 
+  ptm <- proc.time()
+  gcon<-ConsensusClusterPlus(dist(tg_brr), maxK = 6,clusterAlg = "km",seed=1481443338)
+  proc.time() - ptm
+  
+  labcb <- gcon[[6]]$consensusClass
+  
+  
+  sill=silhouette_SimilarityMatrix(as.integer(labcb),sd_br)
+  plot(sill)
+  
+  
+  pdf(file = "D:/dx/ELM-AE/figure/br_surv_consensus.pdf",width = 5,height = 6)
+  plot_KMCurve(clinbr, labcb,palette = "jco",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  dev.off()
+  
+  
+  ptm <- proc.time()
+  tepp<-t(tg_br)
+  nmf_br<- ExecuteCNMF(tepp,clusterNum=4,nrun=5)
+  proc.time() - ptm
+  
+  
+  sill=silhouette_SimilarityMatrix(as.integer(nmf_br$group),sd_br)
+  plot(sill)
+  
+  
+  plot_KMCurve(clinbr, nmf_br$group,palette = "lanonc",xlab = "Follow up(Months)", ylab = "RFS(pro.)",risk.table = T)
+  
+  ##matrix................................
+  
+  diag(sd_br)<-mean(sd_br)
+  # cdc<-cor(t(tg_brr),method = "pearson")
+  # diag(cdc)<-mean(cdc)
+  # 
+  group<-lab_br
+  num=length(unique(group))
+  annotation=data.frame(group=as.factor(group))
+  
+  # Var1 = c(brewer.pal(n = 10, name = "Paired")[1:(num+1)])
+  Var1<-c(pal_jco("default")(6))
+  names(Var1) = sort(unique(group))
+  ann_colors =  list(group=Var1)
+  ind=order(group)
+  
+  consensusmap(sd_br,color=c("lightyellow","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4"),Rowv=ind,Colv=ind,main = "",
+               annCol = annotation,annColors=ann_colors,
+               labRow ="Sample", labCol = "Sample",scale="none")
+  
+  
+  
+  dm<-dist(tg_brr,method = "euclidean",upper = TRUE)
+  
+  dmm<-as.matrix(dm)
+  diag(dmm)<-mean(dmm)
+  
+  
+  
+  gy<-es.num.graph(sd_br,3:8)  
+  
+  df<-data.frame(gy[[2]][-1],c(4:(length(gy[[2]])+2)))
+  colnames(df)<-c("NMI","T")
+  
+  ggplot(df,aes(T,NMI))+geom_line(color="steelblue",size=1)+labs(y="Seperation cost",x="Number of Clusters")+theme_classic()
+  ##colon 2D plot ........................................................
+
+  um<-umap::umap(sd_582)
+  #ftt3<-data.frame(um$layout[,1],um$layout[,2],s3$sc3_6_clusters)
+  ftt11<-data.frame(um$layout[,1],um$layout[,2],lab_582)
+  colnames(ftt11)<-c("u1","u2","lab")
+  co_elmsd_plot<- ggplot(ftt11, aes(ftt11$u1,ftt11$u2))+geom_point(aes(colour = factor(ftt11$lab)))+theme_classic()+labs(x="ELM-SD dim1",y="ELM-SD dim2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  
+  pc_co<-prcomp(mcr582, center = TRUE, scale = FALSE)
+  
+  ftt12<-data.frame(pc_co$x[,1],pc_co$x[,2],lab_582)
+  colnames(ftt12)<-c("u1","u2","lab")
+  
+  co_pca_plot<-ggplot(ftt12, aes(ftt12$u1,ftt12$u2))+geom_point(aes(colour = factor(ftt12$lab)))+theme_classic()+labs(x="PC1",y="PC2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  ts_co<-tsne::tsne(pc_co$x)
+  ftt14<-data.frame(ts_co[,1],ts_co[,2],lab_582)
+  colnames(ftt14)<-c("u1","u2","lab")
+  
+  co_tsne_plot<-ggplot(ftt14, aes(ftt14$u1,ftt14$u2))+geom_point(aes(colour = factor(ftt14$lab)))+theme_classic()+labs(x="TSNE1",y="TSNE2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  um2<-umap::umap(mcr582)
+  
+  ftt13<-data.frame(um2$layout[,1],um2$layout[,2],lab_582)
+  colnames(ftt13)<-c("u1","u2","lab")
+  
+  co_umap_plot<-ggplot(ftt13, aes(ftt13$u1,ftt13$u2))+geom_point(aes(colour = factor(ftt13$lab)))+theme_classic()+labs(x="UMAP1",y="UMAP2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  ##gastric
+  
+  
+  um<-umap::umap(sd_254)
+  #ftt3<-data.frame(um$layout[,1],um$layout[,2],s3$sc3_6_clusters)
+  ftt21<-data.frame(um$layout[,1],um$layout[,2],lab_254)
+  colnames(ftt21)<-c("u1","u2","lab")
+  ga_elmsd_plot<- ggplot(ftt21, aes(ftt21$u1,ftt21$u2))+geom_point(aes(colour = factor(ftt21$lab)))+theme_classic()+labs(x="ELM-SD dim1",y="ELM-SD dim2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  
+  pc_ga<-prcomp(ga, center = TRUE, scale = FALSE)
+  
+  ftt22<-data.frame(pc_ga$x[,1],pc_ga$x[,2],lab_254)
+  colnames(ftt22)<-c("u1","u2","lab")
+  
+  ga_pca_plot<-ggplot(ftt22, aes(ftt22$u1,ftt22$u2))+geom_point(aes(colour = factor(ftt22$lab)))+theme_classic()+labs(x="PC1",y="PC2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  ts_ga<-tsne::tsne(pc_ga$x)
+  ftt24<-data.frame(ts_ga[,1],ts_ga[,2],lab_254)
+  colnames(ftt24)<-c("u1","u2","lab")
+  
+  ga_tsne_plot<-ggplot(ftt24, aes(ftt24$u1,ftt24$u2))+geom_point(aes(colour = factor(ftt24$lab)))+theme_classic()+labs(x="TSNE1",y="TSNE2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  um2<-umap::umap(ga)
+  
+  ftt23<-data.frame(um2$layout[,1],um2$layout[,2],lab_254)
+  colnames(ftt23)<-c("u1","u2","lab")
+  
+  ga_umap_plot<-ggplot(ftt23, aes(ftt23$u1,ftt23$u2))+geom_point(aes(colour = factor(ftt23$lab)))+theme_classic()+labs(x="UMAP1",y="UMAP2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  
+  ##breast...................................................
+  um<-umap::umap(sd_br)
+  #ftt3<-data.frame(um$layout[,1],um$layout[,2],s3$sc3_6_clusters)
+  ftt31<-data.frame(um$layout[,1],um$layout[,2],lab_br)
+  colnames(ftt31)<-c("u1","u2","lab")
+  br_elmsd_plot<- ggplot(ftt31, aes(ftt31$u1,ftt31$u2))+geom_point(aes(colour = factor(ftt31$lab)))+theme_classic()+labs(x="ELM-SD dim1",y="ELM-SD dim2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+
+  pc_br<-prcomp(tg_brr, center = TRUE, scale = FALSE)
+  
+  ftt32<-data.frame(pc_br$x[,1],pc_br$x[,2],lab_br)
+  colnames(ftt32)<-c("u1","u2","lab")
+  
+  br_pca_plot<-ggplot(ftt32, aes(ftt32$u1,ftt32$u2))+geom_point(aes(colour = factor(ftt32$lab)))+theme_classic()+labs(x="PC1",y="PC2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  ts_br<-tsne::tsne(pc_br$x[,1:1000])
+  ftt34<-data.frame(ts_br[,1],ts_br[,2],lab_br)
+  colnames(ftt34)<-c("u1","u2","lab")
+  
+  br_tsne_plot<-ggplot(ftt34, aes(ftt34$u1,ftt34$u2))+geom_point(aes(colour = factor(ftt34$lab)))+theme_classic()+labs(x="TSNE1",y="TSNE2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  um2<-umap::umap(tg_brr)
+  
+  ftt33<-data.frame(um2$layout[,1],um2$layout[,2],lab_br)
+  colnames(ftt33)<-c("u1","u2","lab")
+  
+  br_umap_plot<-ggplot(ftt33, aes(ftt33$u1,ftt33$u2))+geom_point(aes(colour = factor(ftt33$lab)))+theme_classic()+labs(x="UMAP1",y="UMAP2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  ##ovarian...................
+  tepo<-t(GSE26712_ge.syms)
+  
+  um<-umap::umap(sd_o)
+  #ftt3<-data.frame(um$layout[,1],um$layout[,2],s3$sc3_6_clusters)
+  ftt41<-data.frame(um$layout[,1],um$layout[,2],lab_o)
+  colnames(ftt41)<-c("u1","u2","lab")
+  o_elmsd_plot<- ggplot(ftt41, aes(ftt41$u1,ftt41$u2))+geom_point(aes(colour = factor(ftt41$lab)))+theme_classic()+labs(x="ELM-SD dim1",y="ELM-SD dim2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  
+  pc_o<-prcomp(tepo, center = TRUE, scale = FALSE)
+  
+  ftt42<-data.frame(pc_o$x[,1],pc_o$x[,2],lab_o)
+  colnames(ftt42)<-c("u1","u2","lab")
+  
+  o_pca_plot<-ggplot(ftt42, aes(ftt42$u1,ftt42$u2))+geom_point(aes(colour = factor(ftt42$lab)))+theme_classic()+labs(x="PC1",y="PC2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  ts_o<-tsne::tsne(pc_o$x)
+  ftt44<-data.frame(ts_o[,1],ts_o[,2],lab_o)
+  colnames(ftt44)<-c("u1","u2","lab")
+  
+  o_tsne_plot<-ggplot(ftt44, aes(ftt44$u1,ftt44$u2))+geom_point(aes(colour = factor(ftt44$lab)))+theme_classic()+labs(x="TSNE1",y="TSNE2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  um2<-umap::umap(tepo)
+  
+  ftt43<-data.frame(um2$layout[,1],um2$layout[,2],lab_o)
+  colnames(ftt43)<-c("u1","u2","lab")
+  
+  o_umap_plot<-ggplot(ftt43, aes(ftt43$u1,ftt43$u2))+geom_point(aes(colour = factor(ftt43$lab)))+theme_classic()+labs(x="UMAP1",y="UMAP2")+theme(legend.position = "none")+ scale_colour_manual(values = pal_jco("default")(8))
+  
+  
+  
+  
+  pdf(file = "D:/dx/ELM-AE/all_plot.pdf",width = 16,height = 16)
+  
+  plot_grid(co_elmsd_plot,co_pca_plot,co_tsne_plot,co_umap_plot,
+            ga_elmsd_plot,ga_pca_plot,ga_tsne_plot,ga_umap_plot,
+            br_elmsd_plot,br_pca_plot,br_tsne_plot,br_umap_plot,
+            o_elmsd_plot,o_pca_plot,o_tsne_plot,o_umap_plot,labels=c("ELM-SD","PCA","TSNE","UMAP"),nrow=4,ncol = 4,label_size=12)
+  
+  dev.off()
+  
+  
+ ## single cell............................................................ 
+ x<-readRDS("D:/dx/ELM-AE/deng-reads.rds")
+
+ d<-logcounts(x)
+
+ deng<-t(d)
+ ptm <- proc.time()
+ set.seed(11111)
+
+ model <- elmtrain.default(deng,deng,data=deng, nhid=1650, actfun="purelin")
+
+ mpw<-model$inpweight
+ mbas <-model$biashid
+ # mow  <-model$outweight
+ cot_deng<-(deng %*% t(mpw)+mbas)
+
+ A<- affs(cot_deng)
+
+ sd_deng<-self.diffusion(A,4)
+
+ #sc_deng<- spec.clu(sd_deng,6)
+ 
+ #cd<-cor(d,method = "pearson")
+ 
+ cdp<-cor(pbmcg,method = "pearson")
+ 
+ cdd<-dist(deng,method = "euclidean")
+ 
+ ###...........
+ group<-x$cell_type1
+ #group<-pbmc_lab
+ num=length(unique(group))
+ annotation=data.frame(group=as.factor(group))
+ # Var1 = c(brewer.pal(n = 10, name = "Paired")[1:(num+1)])
+ Var1<-ggsci::pal_d3("category20")(11)
+ names(Var1) = sort(unique(group))
+ ann_colors =  list(group=Var1)
+ ind=order(group)
+ 
+ diag(cdd)<-mean(cdd)
+ #541*478
+ consensusmap(cdd,color=c("lightyellow","tomato4"),Rowv=ind,Colv=ind,main = "",
+              annCol = annotation,annColors=ann_colors,
+              labRow ="Sample", labCol = "Sample",scale="none")
+ 
+ image(mcr582[1:100,1:100],breaks=c(-6, seq(-5,5, by=0.01), 6), useRaster=T,
+       col=colorRampPalette(c("blue", "white","darkred"))(1002))
+ 
+ 
+ # 
+ # proc.time() - ptm
+ # 
+ # calNMI(sc_deng,x$cell_type1)
+ # adjustedRandIndex(sc_deng,x$cell_type1)  # 
+ #ftt3<-data.frame(um$layout[,1],um$layout[,2],lab_582)
+  # 
+  # colnames(ftt3)<-c("u1","u2","lab")
+  # ggplot(ftt3, aes(ftt3$u1,ftt3$u2))+geom_point(aes(colour = factor(ftt3$lab)))+labs(x="UMAP1",y="UMAP2")+theme(legend.position = "none")+theme_classic()
+  ##test..............................................................................................
+ 
+  # ##pollen
+
+ # 
+ # # A<- affs(deng)
+ # # sd_deng<-self.diffusion(A,4)
+ # # sc_deng<- spec.clu(sd_deng,6)
+ # # calNMI(sc_deng,x$cell_type1)
+ # um<-umap::umap(cot_deng)
+ # #ftt3<-data.frame(um$layout[,1],um$layout[,2],s3$sc3_6_clusters)
+ # ftt3<-data.frame(um$layout[,1],um$layout[,2],x$cell_type1)
+ # colnames(ftt3)<-c("u1","u2","lab")
+ # ggplot(ftt3, aes(ftt3$u1,ftt3$u2))+geom_point(aes(colour = factor(ftt3$lab)))+theme_classic()+labs(x="ELM-AE",y="ELM-AE")+theme(legend.position = "none")
+ # 
+ # 
+ # um<-umap::umap(cot_deng)
+ # #ftt3<-data.frame(um$layout[,1],um$layout[,2],s3$sc3_6_clusters)
+ # ftt3<-data.frame(um$layout[,1],um$layout[,2],x$cell_type1)
+ # colnames(ftt3)<-c("u1","u2","lab")
+ # ggplot(ftt3, aes(ftt3$u1,ftt3$u2))+geom_point(aes(colour = factor(ftt3$lab)))+theme_classic()+labs(x="ELM-AE",y="ELM-AE")+theme(legend.position = "none")
+ # 
+ # 
+  # ###deng
+ # z<-readRDS("D:/dx/ELM-AE/pollen.rds")
+ # zg<-logcounts(z)
+ # lab_zg<-z$cell_type1
+ # po<-t(zg)
+ # ptm <- proc.time() 
+ # set.seed(11111)
+ # model <- elmtrain.default(po,po,data=po, nhid=1650, actfun="purelin")
+ # mpw<-model$inpweight
+ # mbas <-model$biashid
+ # # mow  <-model$outweight
+ # cot_po<-(po %*% t(mpw)+mbas)
+ # A<- affs(cot_po)
+ # sd_po<-self.diffusion(A,4)
+ # sc_po<- spec.clu(sd_po,11
+ # calNMI(sc_po,lab_zg)
+ # adjustedRandIndex(sc_po,lab_zg)
+ # proc.time() - ptm
+ # ###SD
+ # ptm <- proc.time() 
+ # lA<- affs(deng)
+ # 
+ # lsd_deng<-self.diffusion(lA,4)
+ # 
+ # lsc_deng<- spec.clu(lsd_deng,11)
+ # 
+ # proc.time() - ptm
+ # 
+ # calNMI(lsc_deng,lab_zg)
+ # 
+ #pbmc
+ # pbmc.data<-h5read("D:/dx/ELM-AE/scDeepCluster-master/scDeepCluster-master/scRNA-seq data/10X_PBMC.h5","X")
+ # 
+ # pbmc_lab<-h5read("D:/dx/ELM-AE/scDeepCluster-master/scDeepCluster-master/scRNA-seq data/10X_PBMC.h5","Y")
+ # 
+ # colnames(pbmc.data)<-c(1:ncol(pbmc.data))
+ # rownames(pbmc.data)<-c(1:nrow(pbmc.data))
+ # 
+ # pbmcg<-log2(1+pbmc.data)
+ # 
+ # dat<-t(pbmcg)
+ # 
+ # ptm <- proc.time()
+ # set.seed(11111)
+ # 
+ # model <- elmtrain.default(dat,dat,data=dat, nhid=1650, actfun="purelin")
+ # 
+ # mpw<-model$inpweight
+ # mbas <-model$biashid
+ # # mow  <-model$outweight
+ # cot_pbmc<-(dat %*% t(mpw)+mbas)
+ # 
+ # A_pbmc<- affs(cot_pbmc)
+ # #
+ # sd_pbmc<-self.diffusion(A_pbmc,4)
+ # 
+ # sc_pbmc<- spec.clu(sd_pbmc,8)
+ # 
+ # calNMI(sc_pbmc,pbmc_lab)
+ # 
+ # adjustedRandIndex(sc_pbmc,pbmc_lab)
+ # 
+ # proc.time() - ptm
+ # 
+ # 
+ # um<-umap::umap(cot_pbmc)
+ # #ftt3<-data.frame(um$layout[,1],um$layout[,2],s3$sc3_6_clusters)
+ # ftt3<-data.frame(um$layout[,1],um$layout[,2],pbmc_lab)
+ # colnames(ftt3)<-c("u1","u2","lab")
+ # ggplot(ftt3, aes(ftt3$u1,ftt3$u2))+geom_point(aes(colour = factor(ftt3$lab)))+theme_classic()+labs(x="ELM-AE",y="ELM-AE")+theme(legend.position = "none")
+ # 
+ # 
+ # um<-umap::umap(sd_deng)
+ # #ftt3<-data.frame(um$layout[,1],um$layout[,2],s3$sc3_6_clusters)
+ # ftt3<-data.frame(um$layout[,1],um$layout[,2],x$cell_type1)
+ # colnames(ftt3)<-c("u1","u2","lab")
+ # ggplot(ftt3, aes(ftt3$u1,ftt3$u2))+geom_point(aes(colour = factor(ftt3$lab)))+theme_classic()+labs(x="ELM-AE",y="ELM-AE")+theme(legend.position = "none")
+ # 
+ # 
+ # 
+ # 
+ # group<-pbmc_lab
+ # num=length(unique(group))
+ # annotation=data.frame(group=as.factor(group))
+ # # Var1 = c(brewer.pal(n = 10, name = "Paired")[1:(num+1)])
+ # Var1<-ggsci::pal_d3("category20")(11)
+ # names(Var1) = sort(unique(group))
+ # ann_colors =  list(group=Var1)
+ # ind=order(group)
+ # 
+ # #diag(As)<-mean(As)
+ # #541*478
+ # consensusmap(sd_pbmc,color=c("lightyellow","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4",
+ #                              "tomato4","tomato4","tomato4","tomato4","tomato4","tomato4",
+ #                              "tomato4","tomato4","tomato4","tomato4","tomato4","tomato4",
+ #                              "tomato4","tomato4","tomato4","tomato4","tomato4","tomato4",
+ #                              "tomato4","tomato4","tomato4","tomato4","tomato4","tomato4","tomato4"),Rowv=ind,Colv=ind,main = "",
+ #              annCol = annotation,annColors=ann_colors,
+ #              labRow ="Sample", labCol = "Sample",scale="none")
+ # 
+ # 
+ # # ###LSSD
+ # # A_pbmc<- affs(dat)
+ # # sd_pbmc<-self.diffusion(A_pbmc,4)
+ # # sc_pbmc<- spec.clu(sd_pbmc,8)
+ # # nmi<-calNMI(sc_pbmc,pbmc_lab)
+ # # nmi
+ # # proc.time() - ptm
+ # # ##mouse........................................
+ # # mouse.data<-h5read("D:/dx/ELM-AE/scDeepCluster-master/scDeepCluster-master/scRNA-seq data/worm_neuron_cell.h5","X")
+ # # mouse_lab<-h5read("D:/dx/ELM-AE/scDeepCluster-master/scDeepCluster-master/scRNA-seq data/worm_neuron_cell.h5","Y")
+ # # colnames(mouse.data)<-c(1:ncol(mouse.data))
+ # # rownames(mouse.data)<-c(1:nrow(mouse.data))
+ # # mouseg<-log2(1+mouse.data)
+ # # dat<-t(mouseg)
+ # # ptm <- proc.time()
+ # # set.seed(11111)
+ # # model <- elmtrain.default(dat,dat,data=dat, nhid=1650, actfun="purelin")
+ # # mpw<-model$inpweight
+ # # mbas <-model$biashid
+ # # # mow  <-model$outweight
+ # # cot_mouse<-(dat %*% t(mpw)+mbas)
+ # # A_mouse<- affs(cot_mouse)
+ # # sd_mouse<-self.diffusion(A_mouse,4)
+ # # sc_mouse<- spec.clu(sd_mouse,10)
+ # # proc.time() - ptm
+ # # calNMI(sc_mouse,mouse_lab)
+ # # adjustedRandIndex(sc_mouse,mouse_lab)
+ # # 
+ # # ##LSSD
+ # # ptm <- proc.time() 
+ # # A_mouse<- affs(dat)
+ # # sd_mouse<-self.diffusion(A_mouse,4)
+ # # sc_mouse<- spec.clu(sd_mouse,4)
+ # # calNMI(sc_mouse,mouse_lab)
+ # # adjustedRandIndex(sc_mouse,mouse_lab)
+ # # proc.time() - ptm
+ # # 
+ data<-read.csv("D:/dx/ELM-AE/142.csv")
+ 
+ colnames(data)<-c("Method","P-value","Silhouette width","Running time","Data")
+ 
+ 
+ data$`Running time`<-log2(1+data$`Running time`)
+ #data$`Running time(s)`<-log(data$`Running time(s)`)
+ mdc<-melt(data)
+ 
+ age<-c(rep("PBMC",8),
+        rep("PBMC",8),
+        rep("PBMC",8))
+ # 
+ # mdc$age<-age
+ 
+ #col<-pal_nejm("default")(5)
+ #col<-pal_npg("nrc")(5)
+ #col<-c("#42977E","#BEAED4","#7A9DA8","#DF1F5C","#83624B")
+ col<-	pal_nejm("default")(8)
+ #94C09B
+ ggplot() + geom_col(data = mdc, aes(x = Method, y = value,fill = Method)) +
+   facet_grid(variable ~ age,scales="free_y")+ scale_fill_manual(values = col)+theme_classic()+theme(axis.text.x = element_text(angle = -30, hjust = 0),
+                                                                                                     axis.title.x=element_blank(),
+                                                                                                     axis.title.y=element_blank(),
+                                                                                                     legend.position = "right",
+                                                                                                     legend.title = element_blank())
+ data<-read.csv("D:/dx/ELM-AE/142.csv")
+ 
+ colnames(data)<-c("Method","P-value","Silhouette width","Running time","Data")
+ 
+ datt<-data[,-5]
+ 
+ datt$`Running time`<-log2(datt$`Running time`)
+ 
+ datt$`P-value`<--log10(datt$`P-value`)
+
+
+ #datt$Runing.time<-log2(1+data$Runing.time)
+ #colnames(datt)<-c("Method","NMI","ARI","Running time")
+ #data$`Running time(s)`<-log(data$`Running time(s)`)
+ mdc<-melt(datt)
+ 
+ age<-c(rep("a+Colerectal cancer",5),rep("b+Gastric cancer",5),rep("c+Breast cancer",5),rep("c+Ovarian cancer",5),
+        rep("a+Colerectal cancer",5),rep("b+Gastric cancer",5),rep("c+Breast cancer",5),rep("c+Ovarian cancer",5),
+        rep("a+Colerectal cancer",5),rep("b+Gastric cancer",5),rep("c+Breast cancer",5),rep("c+Ovarian cancer",5))
+        
+ mdc$age<-age
+
+ #col<-pal_nejm("default")(5)
+ #col<-pal_npg("nrc")(5)
+ #col<-c("#42977E","#BEAED4","#7A9DA8","#DF1F5C","#83624B")
+ col<-	pal_uchicago("dark")(8)
+ 
+ #col<-	pal_npg("nrc")(8)
+ #94C09B
+ pdf(file = "D:/dx/ELM-AE/figure/compared.pdf",width = 10,height = 8)
+ 
+ ggplot() + geom_col(data = mdc, aes(x = Method, y = value,fill = Method)) +
+   facet_grid(variable ~ age,scales="free_y")+ scale_fill_manual(values = col)+theme_classic2()+theme( axis.text.x = element_text(angle = -30, hjust = 0),
+                                                                                                      axis.title.x=element_blank(),
+                                                                                                      legend.title = element_blank())
+ dev.off()

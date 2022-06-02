@@ -1,0 +1,632 @@
+
+library(ggsci)
+library(survcomp)
+library(survival)
+library(survminer)
+library(cowplot)
+library(Spectrum)
+library(LSSDsc)
+library(SNFtool)
+library(CancerSubtypes)
+library(CIMLR)
+library(NEMO)
+library(iCluster)
+library(PINSPlus)
+library(NMF)
+library(reshape2)
+library(MOVICS)
+
+library(MOSD)
+
+load("D:/dx/MVSD/data/used/COADREAD_vv.RData")
+
+
+#clinb <- Surv(as.numeric(survival$Survival), as.numeric(survival$Death))
+clinco <- Surv(as.numeric(coad.clin$time), as.numeric(coad.clin$status))
+#ptm<-proc.time()
+
+d<-list(mydatGE,mydatME,mydatMI)
+
+tes<-MOSD(d)
+
+plot.KM(clinco,as.integer(tes$clu),xlab = "Follow up(months)",ylab = "Survival probability(%)")
+
+
+# MOSD<-function(x,k){
+#   s<-sapply(1:length(d), function(i){
+#     dim(d[[i]])[2]
+#   })
+#   w<-perc(s)
+#   we<-exp(w)
+#   p<-perc(we)
+#   A<-lapply(1:length(d),function(i){
+#     affs(d[[i]])
+#   })
+#   AL<-lapply(1:length(d), function(i){
+#     A[[i]]*p[i]
+#   })
+#   AA<-Reduce('+',AL)
+#   sd_matrix<-self.diffusion(AA,3)
+#   lab<-spec.clu(sd_matrix,k)
+#   results = list()
+#   results[["clu"]] = lab
+#   results[["S"]] = sd_matrix
+#   return(results)
+# }
+
+# A1<-affs(mydatGE)
+# A2<-affs(mydatME)
+# A3<-affs(mydatMI)
+
+perc<-function(x){
+  sapply(1:length(x), function(i){
+    x[i]/sum(x)
+  })
+}
+#s<-c(dim(mydatGE)[2],dim(mydatME)[2],dim(mydatMI)[2])
+# w<-perc(s)
+# we<-exp(w)
+# p<-perc(we)
+# AA<-p[1]*A1+p[2]*A2+p[3]*A3
+
+# A<-list(A1,A2,A2)
+# AA<-Reduce('+',A)
+# sdco<-self.diffusion(AA,3)
+# labco<-spec.clu(sdco,3)
+
+proc.time() - ptm
+
+pdf(file = "D:/dx/MVSD/figure/co_surv.pdf",width = 5.5,height = 6.5)
+
+plot_KMCurve(clinco,as.integer(labco),xlab = "Follow up(months)",ylab = "Survival probability(%)")
+
+dev.off()
+
+#,color =c("#374E55FF","#DF8F44FF","#00A1D5FF")
+gy<-es.num.graph(sdco,2:10)
+
+df<-data.frame(gy[[2]][1:5],c(2:6))
+colnames(df)<-c("NMI","T")
+
+ggplot(df,aes(T,NMI))+geom_line(color="steelblue",size=1)+labs(y="Seperation cost",x="Number of Clusters")+theme_classic()
+
+
+pm<-prcomp(mydatGE)
+
+sil<-silhouette_SimilarityMatrix(lab,sd)
+plot(sil)
+
+##spectrum...............................................
+ptm <- proc.time()
+
+d2<-list(t(mydatGE),t(mydatME),t(mydatMI))
+
+tes <- Spectrum1(d2)
+
+proc.time() - ptm
+
+labss<-tes$assignments
+
+plot_KMCurve(clinbrc, labss)
+
+
+sil<-silhouette(labss,dist(sd))
+plot(sil)
+
+sil<-silhouette_SimilarityMatrix(labss,tes$similarity_matrix)
+plot(sil)
+
+##SNF......................................................
+ptm <- proc.time()
+result<-ExecuteSNF(d2, clusterNum=5, K=20, alpha=0.5, t=20)
+
+proc.time() - ptm
+
+labsnf <- factor(result$group)
+
+
+sil<-silhouette(labsnf,daisy(pm$x[,1:3]))
+plot(sil)
+
+plot_KMCurve(clinbrc, labsnf)
+
+sil<-silhouette_SimilarityMatrix(result$group,result$distanceMatrix)
+plot(sil)
+
+##CIMLR
+
+NUMC = 2:10
+res <- CIMLR_Estimate_Number_of_Clusters(d2,NUMC = NUMC,cores.ratio = 0)
+NUMC[which.min(res$K1)]
+
+ptm<-proc.time()
+set.seed(11111)
+cim <- CIMLR(X = d2, c = 8, cores.ratio = 0)
+proc.time() - ptm
+
+plot_KMCurve(clinbrc,cim$y$cluster)
+
+
+sil<-silhouette(cim$y$cluster,daisy(pm$x[,1:3]))
+plot(sil)
+
+sil<-silhouette(cim$y$cluster,dist(cim$F))
+
+sil<-silhouette_SimilarityMatrix(cim$y$cluster,sd)
+#sil<-silhouette(cim$y$cluster,AA)
+
+plot(sil)
+
+##NEMO
+affinity.graph <- nemo.affinity.graph(d2, k = 20)
+
+# ask nemo to estimate the number of clusters.
+num.clusters <- nemo.num.clusters(affinity.graph)
+
+num.clusters
+
+ptm<-proc.time()
+nem <- nemo.clustering(d2,num.clusters=5, num.neighbors=50)
+
+proc.time() - ptm
+
+
+plot_KMCurve(clinbrc,as.integer(nem))
+
+sil<-silhouette_SimilarityMatrix(nem,affinity.graph)
+
+#sil<-silhouette(nem,dist(affinity.graph))
+
+plot(sil)
+
+##PINplus
+ptm<-proc.time()
+set.seed(11111)
+d1<-list(mydatGE,mydatME,mydatMI)
+names(d1) <- c("GE", "ME", "MI")
+result3 <- SubtypingOmicsData(dataList = d1)
+proc.time() - ptm
+
+plot_KMCurve(clinbrc, result3$cluster1)
+
+sil<-silhouette_SimilarityMatrix(result3$cluster2,sd)
+
+#sil<-silhouette(nem,dist(affinity.graph))
+plot(sil)
+##icluster
+ptm<-proc.time()
+#ic<-iCluster(d1,3,lambda=c(0.2,0.2))
+result1<-ExecuteiCluster(datasets=d2, k=3, lambda=list(0.44,0.33,0.28))
+proc.time() - ptm
+
+##colon......................
+ co.clin<-tcga.clin[row.names(mydatGE),]
+
+ fisher.test(lab,co.clin$cimp.status)
+
+ fisher.test(lab,co.clin$kras.mutation)
+
+ fisher.test(lab,co.clin$braf.mutation)
+
+# cmsc<-co.clin[-which(co.clin$cms=="NOLBL"),]
+# clincms <- Surv(as.numeric(cmsc$time), as.numeric(cmsc$status))
+#
+# plot_KMCurve(clincms,cmsc$cms)
+#
+#  coad.clin<-co.clin[,-c(26,29)]
+#  coad.clin$lab<-lab
+# #
+# # plot_KMCurve(clinc,lab)
+# #
+#  save(mydatGE,mydatME,mydatMI,coad.clin,file = "D:/dx/MVSD/data/COADREAD_vv.RData")
+ pdf(file = "D:/dx/MVSD/figure/co_surv1.pdf",width = 5.5,height = 6.5)
+ plot_KMCurve(clinco,as.integer(labco),color =c("#374E55FF","#DF8F44FF","#00A1D5FF"),xlab = "Follow up(months)",ylab = "Survival probability(%)")
+ dev.off()
+ ##consensus map
+
+ diag(sdco)<-mean(sdco)
+
+ group<-labco
+ num=length(unique(group))
+ annotation=data.frame(group=as.factor(group))
+
+ # Var1 = c(brewer.pal(n = 10, name = "Paired")[1:(num+1)])
+ Var1<-c(pal_jama("default")(3))
+ names(Var1) = sort(unique(group))
+ ann_colors =  list(group=Var1)
+ ind=order(group)
+
+ consensusmap(sd,color=c("lightyellow","tomato4","tomato4","tomato4","tomato4","tomato4"),Rowv=ind,Colv=ind,main = "",
+              annCol = annotation,annColors=ann_colors,
+              labRow ="Sample", labCol = "Sample",scale="none")
+
+
+ ##..............
+
+
+ df<-rbind(coad.clin[which(coad.clin$lab==1),],coad.clin[which(coad.clin$lab==2),],coad.clin[which(coad.clin$lab==3),])
+
+ dfos <- t(as.matrix(data.frame(
+
+   Class=c(rep("1",nrow(coad.clin[which(df$lab==1),])),rep("2",nrow(df[which(df$lab==2),])),rep("3",nrow(df[which(df$lab==3),]))),
+   Relapse=as.vector(ifelse(df$status==1,"1","  ")),
+   MSI=as.vector(ifelse(df$mmr.status=="MSI","1","  ")),
+   CIMP=as.vector(ifelse(df$cimp.status==1,"1","  ")),
+   KRAS=as.vector(ifelse(df$kras.mutation==1,"1","  ")),
+   BRAF=as.vector(ifelse(df$braf.mutation==1,"1","  ")))))
+
+  dfos[is.na(dfos)]<-0
+
+  dfos[which(dfos=="  ")]<-"0"
+
+  dfo<-apply(dfos,2,function(x) as.numeric(x))
+
+  row.names(dfo)<-row.names(dfos)
+  dfoo<-dfo[-1,]
+
+  colnames(dfoo)<-row.names(mydatGE)
+
+  # annCOlo<-data.frame(coad.clin$cms,coad.clin$tnm.stage,coad.clin$Age)
+  #
+  # colnames(annCOlo)<-c("CMS","Stage","age")
+  #
+  #
+  # reso<-data.frame(row.names(mydatGE),labco)
+  #
+  # row.names(reso)<-row.names(mydatGE)
+  #
+  #
+  # mut.brca <- compMut1(moic.res     = cmoic.brca,
+  #                     mut.matrix   = dfoo, # binary somatic mutation matrix
+  #                     doWord       = TRUE, # generate table in .docx format
+  #                     doPlot       = TRUE, # draw OncoPrint
+  #                     freq.cutoff  = 0.05, # keep those genes that mutated in at least 5% of samples
+  #                     p.adj.cutoff = 0.05, # keep those genes with adjusted p value < 0.05 to draw OncoPrint
+  #                     innerclust   = TRUE, # perform clustering within each subtype
+  #                     annCol       = annCOlo, # same annotation for heatmap
+  #                     annColors    = annColors, # same annotation color for heatmap
+  #                     width        = 6,
+  #                     height       = 2,
+  #                     fig.name     = "ONCOPRINT FOR SIGNIFICANT MUTATIONS",
+  #                     tab.name     = "INDEPENDENT TEST BETWEEN SUBTYPE AND MUTATION")
+  # annCOlo[,1][is.na(annCOlo[,1])]<-"NOLBL"
+  # annCOlo[,2][is.na(annCOlo[,2])]<-"1"
+  # x3<-as.numeric(annCOlo[,3])
+  # x3[is.na(x3)]<-"NON"
+  # annCOlo[,3]<-x3
+  # row.names(annCOlo)<-row.names(mydatGE)
+  # dfo[which(dfo==0.5)]<-5
+  # dfo[is.na(dfos)]<-0
+  #pdf(file = "D:/dx/ELM-AE/factor.pdf",width = 8,height = 4)
+
+  pdf(file = "D:/dx/MVSD/figure/factor2.pdf",width = 7,height = 3)
+  image(t(dfo[nrow(dfo):1,]),col=c("white","#374E55FF","#DF8F44FF","#00A1D5FF","red","black"))
+  dev.off()
+
+  ##.......................
+  co<-read.csv("D:/dx/MVSD/Compared.csv")
+
+  row.names(co)<-co[,1]
+
+  ##pv.......................................
+
+  pv<-co[,c(2,5,8,11,14,17)]
+
+  #pv$n<-c(1:10)
+
+  mvp<-melt(pv,value.name = "n")
+
+  mvp$n<- -log10(mvp$n)
+
+  ggplot(mvp, aes(x=variable, y=n,color=variable)) + geom_boxplot()+coord_flip()+
+    theme_classic()+theme(legend.position="none")+scale_color_manual(values=c("#800000FF","#767676FF","#CC8214FF","#616530FF","#0F425CFF","#9A5324FF" ))+
+    geom_hline(yintercept=-log10(0.05), linetype="dashed", color = "red")+labs(y="-log10(p-value)",x="")
+
+
+  ###time.........................................
+  ti<-co[,c(3,6,9,12,15,18)]
+
+  colnames(ti)<-colnames(pv)
+
+  #pv$n<-c(1:10)
+
+  tii<-melt(ti)
+
+  tii$n<- log2(1+tii$value)
+
+  ggplot(tii, aes(x=variable, y=n,color=variable)) + geom_boxplot()+
+    theme_classic()+theme(legend.position="none")+labs(y="log10(1+t)",x="")
+
+  ##sil..............................
+
+  si<-co[,c(4,7,10,13,16,19)]
+
+  colnames(si)<-colnames(pv)
+
+
+  m1<-melt(t(ti))
+
+  m1$value<-log2(1+m1$value)
+
+  m2<-melt(t(si))
+
+  m<-rbind(m1,m2)
+
+  m$variable<-c(rep("time",54),rep("sil",54))
+
+  col<-c("#800000FF","#767676FF","#CC8214FF","#616530FF","#0F425CFF","#9A5324FF" )
+
+  ggplot() + geom_col(data = m, aes(x = Var1, y = value,fill = Var1)) +
+    facet_grid(variable ~ Var2,scales="free_y")+ scale_fill_manual(values = col)+theme_classic2()+theme( axis.text.x = element_text(angle = -30, hjust = 0),
+                                                                                                        axis.title.x=element_blank(),
+                                                                                                        legend.title = element_blank())
+
+  # age<-c(rep("a+Colerectal cancer",5),rep("b+Gastric cancer",5),rep("c+Breast cancer",5),rep("c+Ovarian cancer",5),
+  #        rep("a+Colerectal cancer",5),rep("b+Gastric cancer",5),rep("c+Breast cancer",5),rep("c+Ovarian cancer",5),
+  #        rep("a+Colerectal cancer",5),rep("b+Gastric cancer",5),rep("c+Breast cancer",5),rep("c+Ovarian cancer",5))
+  #
+  #mdc$age<-age
+
+  #col<-pal_nejm("default")(5)
+  #col<-pal_npg("nrc")(5)
+  #col<-c("#42977E","#BEAED4","#7A9DA8","#DF1F5C","#83624B")
+  col<-	pal_uchicago("dark")(10)
+
+  #col<-	pal_npg("nrc")(8)
+  #94C09B
+  pdf(file = "D:/dx/ELM-AE/figure/compared.pdf",width = 10,height = 8)
+
+  ggplot() + geom_col(data = m, aes(x = methods, y = value,fill = Method)) +
+    facet_grid(variable ~ age,scales="free_y")+ scale_fill_manual(values = col)+theme_classic2()+theme( axis.text.x = element_text(angle = -30, hjust = 0),
+                                                                                                        axis.title.x=element_blank(),
+                                                                                                        legend.title = element_blank())
+  dev.off()
+
+  ##brca..........................
+  # library(MOVICS)
+  # load(system.file("extdata", "brca.tcga.RData", package = "MOVICS", mustWork = TRUE))
+
+  # br_GE<- mydatGE1<-t(mo.data$mRNA.expr)
+  # br_LNC<-mydatMI1<-t(mo.data$lncRNA.expr)
+  # br_ME<-mydatME1<-t(mo.data$meth.beta)
+
+  #save(br_GE,br_LNC,br_ME,surv.info,file = "D:/dx/MVSD/br_data.RData")
+
+  library(MOSD)
+
+  load("D:/dx/MVSD/data/used/br_data.RData")
+
+  # surv.info <- brca.tcga$clin.info
+  # mo.data   <- brca.tcga[1:4]
+  bros<-as.numeric(surv.info$fustat)
+  time<-as.numeric(surv.info$futime)/30
+  bros[which(time > 120 & bros)] <- 0
+  time[which(time > 120)] <- 120
+
+  clinbrc<-survival::Surv(time, bros)
+
+  d2<-list(br_GE,br_ME,br_LNC)
+
+  br<-MOSD(d2,5)
+
+  proc.time() - ptm
+
+  pdf(file = "D:/dx/MVSD/figure/brca_surv.pdf",width = 5.5,height = 6.5)
+  plot.KM(clinbrc,as.integer(br$clu),color =c("#0073C2FF","#EFC000FF","#868686FF","#CD534CFF","#7AA6DCFF"),xlab = "Follow up(months)",ylab = "Survival probability(%)")
+  dev.off()
+#   gy<- es.num.graph(sdbr,2:10)
+#
+#   df<-data.frame(gy[[2]][2:8],c(3:9))
+#   colnames(df)<-c("NMI","T")
+#
+#   ggplot(df,aes(T,NMI))+geom_line(color="steelblue",size=1)+labs(y="Seperation cost",x="Number of Clusters")+theme_classic()
+
+
+
+  # moic.res.list <- getMOIC(data        = mo.data,
+  #                          methodslist = list("SNF","NEMO"),
+  #                          N.clust     = 5,
+  #                          type        = c("gaussian", "gaussian", "gaussian", "binomial"))
+  #
+  #
+  #
+  # getMoHeatmap(data          = plotdata,
+  #              row.title     = c("mRNA","lncRNA","Methylation","Mutation"),
+  #              is.binary     = c(F,F,F,T), # the 4th data is mutation which is binary
+  #              legend.name   = c("mRNA.FPKM","lncRNA.FPKM","M value","Mutated"),
+  #              clust.res     = moic.res.list$SNF, # consensusMOIC results
+  #              clust.dend    = NULL, # show no dendrogram for samples
+  #              show.rownames = c(F,F,F,F), # specify for each omics data
+  #              show.colnames = FALSE, # show no sample names
+  #              show.row.dend = c(F,F,F,F), # show no dendrogram for features
+  #              annRow        = NULL, # no selected features
+  #              color         = col.list,
+  #              annCol        = annCol, # annotation for samples
+  #              annColors     = annColors, # annotation color
+  #              width         = 10, # width of each subheatmap
+  #              height        = 5, # height of each subheatmap
+  #              fig.name      = "COMPREHENSIVE HEATMAP OF CONSENSUSMOIC")
+  #
+
+  pdf(file = "D:/dx/MVSD/figure/brca_mut2.pdf",width = 15,height = 4)
+
+  mut.brca <- compMut(moic.res     = cmoic.brca,
+                      mut.matrix   = brca.tcga$mut.status, # binary somatic mutation matrix
+                      doWord       = TRUE, # generate table in .docx format
+                      doPlot       = TRUE, # draw OncoPrint
+                      freq.cutoff  = 0.05, # keep those genes that mutated in at least 5% of samples
+                      p.adj.cutoff = 0.05, # keep those genes with adjusted p value < 0.05 to draw OncoPrint
+                      innerclust   = TRUE, # perform clustering within each subtype
+                      annCol       = annCol, # same annotation for heatmap
+                      annColors    = annColors, # same annotation color for heatmap
+                      width        = 6,
+                      height       = 2,
+                      clust.col    = c("#0073C2FF","#EFC000FF","#868686FF","#CD534CFF","#7AA6DCFF","#011627","#023E8A","#9D4EDD"),
+                      fig.name     = "ONCOPRINT FOR SIGNIFICANT MUTATIONS",
+                      tab.name     = "INDEPENDENT TEST BETWEEN SUBTYPE AND MUTATION")
+
+  dev.off()
+  # PIK3CA 0.003241
+  # TP53  0.01276
+  # TTN  0.0135
+  # CDH1 0.016
+  # GATA3 0.02257
+  #
+  # MAP 0.02741
+  #
+  mu<-t(brca.tcga$mut.status)
+
+  t.test(table(mu[,2],lab))
+
+
+  ##...............
+  agree.brca <- compAgree1(moic.res  = cmoic.brca,
+                          subt2comp = surv.info[,c("PAM50","pstage")],
+                          doPlot    = TRUE,
+                          clust.col    = c("#0073C2FF","#EFC000FF","#868686FF","#CD534CFF","#7AA6DCFF","#011627","#023E8A","#9D4EDD"),
+                          box.width = 0.2,
+                          fig.name  = "AGREEMENT OF CONSENSUSMOIC WITH PAM50 AND PSTAGE")
+
+  ##....................
+  fpkm      <- brca.tcga$fpkm
+  count     <- brca.tcga$count
+  maf       <- brca.tcga$maf
+  segment   <- brca.tcga$segment
+
+  gsea.up <- runGSEA(moic.res     = cmoic.brca,
+                     dea.method   = "limma", # name of DEA method
+                     prefix       = "TCGA-BRCA", # MUST be the same of argument in runDEA()
+                     dat.path     = getwd(), # path of DEA files
+                     clust.col    = c("#0073C2FF","#EFC000FF","#868686FF","#CD534CFF","#7AA6DCFF"),
+                     color = c("steelblue","white","darkorange"),
+                     res.path     = getwd(), # path to save GSEA files
+                     msigdb.path  = MSIGDB.FILE, # MUST be the ABSOLUTE path of msigdb file
+                     norm.expr    = fpkm, # use normalized expression to calculate enrichment score
+                     dirct        = "up", # direction of dysregulation in pathway
+                     p.cutoff     = 0.05, # p cutoff to identify significant pathways
+                     p.adj.cutoff = 0.05, # padj cutoff to identify significant pathways
+                     gsva.method  = "gsva", # method to calculate single sample enrichment score
+                     norm.method  = "mean", # normalization method to calculate subtype-specific enrichment score
+                     fig.name     = "UPREGULATED PATHWAY HEATMAP")
+
+
+  marker.up <- runMarker(moic.res      = cmoic.brca,
+                         dea.method    = "limma", # name of DEA method
+                         clust.col    = c("#0073C2FF","#EFC000FF","#868686FF","#CD534CFF","#7AA6DCFF"),
+                         prefix        = "TCGA-BRCA", # MUST be the same of argument in runDEA()
+                         dat.path      = getwd(), # path of DEA files
+                         res.path      = getwd(), # path to save marker files
+                         p.cutoff      = 0.05, # p cutoff to identify significant DEGs
+                         p.adj.cutoff  = 0.05, # padj cutoff to identify significant DEGs
+                         dirct         = "up", # direction of dysregulation in expression
+                         n.marker      = 100, # number of biomarkers for each subtype
+                         doplot        = TRUE, # generate diagonal heatmap
+                         norm.expr     = fpkm, # use normalized expression as heatmap input
+                         annCol        = annCol, # sample annotation in heatmap
+                         annColors     = annColors, # colors for sample annotation
+                         show_rownames = FALSE, # show no rownames (biomarker name)
+                         fig.name      = "UPREGULATED BIOMARKER HEATMAP")
+
+  MSIGDB.FILE <- system.file("extdata", "c5.bp.v7.1.symbols.xls", package = "MOVICS", mustWork = TRUE)
+
+
+  ##hyper
+  ## hyper
+
+
+  pg<-data.frame(lab,annCol$PAM50)
+
+
+  colnames(pg)<-c("class","ms")
+
+  #pgg<- pg[complete.cases(pg), ]
+
+  libr<-pg
+
+  libr$ms<-factor(libr$ms)
+
+  gN1<-matrix(NA,5,length(levels(libr$ms)))
+  for(i in 1:5){
+    for(j in 1:length(levels(libr$ms)))
+    {
+      k<-0
+      for( t in 1:length(libr$ms)){
+        if(libr$ms[t]==colnames(table(libr$class,libr$ms))[j])
+          k<-k+1
+      }
+      gN1[i,j]<-phyper(table(libr$class,libr$ms)[i,j]-1,k,length(libr$ms)-k, sum(table(libr$class,libr$ms)[i,]),lower.tail=FALSE)
+    }
+  }
+
+  rownames(gN1)<-c("CS1","CS2","CS3","CS4","CS5")
+  colnames(gN1)<-colnames(table(libr$class,libr$ms))
+  gN1
+
+  #  rgN1<-rbind(gN1[3,],gN1[1,],gN1[2,],gN1[4,])
+  # #
+  #  rownames(rgN1)<-c("Class3","Class1","Class2","Class4")
+
+  # N1<-read.csv("D:/dx/ELMCC2/data/rgN1.csv")
+  #
+  # #N1<-read.csv("D:/dx/ELMCC2/data/gN1_c.csv")
+
+  # N<-as.matrix(N1[,-1])
+  # rownames(N)<-c("Class3","Class1","Class2","Class4")
+  #colnames(N)<-c("C1","C2","C3","C4","C5","C6")
+
+  #gN1<-as.matrix(N1)
+
+  glN1 <- -log10(gN1)/10
+
+  #glN1[which(glN1<0.3)]<-0
+
+  da <- melt(glN1)
+
+  #da$pv <- round(da$value,3)
+  ##006699
+  ggplot(da, aes(x=Var1, y=Var2, fill=value))+geom_tile(colour="gray") +
+    scale_fill_gradientn(colours=c("white","#35978F"),breaks=c(0,10.2),labels=as.character(rev(c(0,1))),limits=c(0,10.2)) + theme_classic()+
+    scale_color_manual(values=c("black"), guide=F) +
+    theme(
+          axis.text.x = element_text(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),
+          legend.title = element_blank())
+
+  ###.......................................................................................
+  annColors <- list(age    = circlize::colorRamp2(breaks = c(min(annCol$age),
+                                                             median(annCol$age),
+                                                             max(annCol$age)),
+                                                  colors = c("#0000AA", "#555555", "#AAAA00")),
+                    PAM50  = c("Basal" = "#FAFD7CFF",
+                               "Her2"   = "#82491EFF",
+                               "LumA"   = "#24325FFF",
+                               "LumB"   = "#B7E4F9FF",
+                               "Normal" = "#FB6467FF"),
+                    pstage = c("T1"    = "#CC0C00FF",
+                               "T2"    = "#5C88DAFF",
+                               "T3"    = "#84BD00FF",
+                               "T4"    = "#FFCD00FF",
+                               "TX"    = "#7C878EFF"))
+
+
+  ###.............
+
+  #time, bros
+
+
+  dov<-data.frame(as.numeric(time),as.numeric(bros),labbr)
+
+  colnames(dov)<-c("time","status","lab")
+
+  dov$lab[which(dov$lab==2)]<-5
+
+  x1<-dov[which(dov$lab==1),]
+  x2<-dov[which(dov$lab==5),]
+  x3<-dov[which(dov$lab==3),]
+
+  x<-rbind(x2,x3)
+
+  co<- coxph(Surv(as.numeric(x$time),as.numeric(x$status)) ~ x$lab, data =  x)
+
+  summary(co)
