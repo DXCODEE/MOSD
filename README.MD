@@ -7,7 +7,7 @@ Cancer subtyping is critical for precise patients prognosis and treatment.Integr
 
 You can install MOSD from GitHub directly using devtools.
 - install.packages("devtools")
-- devtools::install_github("DXCODEE/LSSD")
+- devtools::install_github("DXCODEE/MOSD")
 
 ## Example
   ```
