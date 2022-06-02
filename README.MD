@@ -10,9 +10,11 @@ You can install MOSD from GitHub directly using devtools.
 - devtools::install_github("DXCODEE/MOSD")
 
 ## Example
-  ```
-	 x<-readRDS("data/COADREAD.rds")
-	 tes<-MOSD(x)
+  ```    
+  We used BRCA DNA methylation and miRNA to demonstrate the MOSD 
+	 x<-readRDS("data/BRCA.rds")
+	 d<-list(x[[1]],x[[2]])
+	 tes<-MOSD(x,6)
  ```
 ## compare subtypes outcome
 
@@ -20,7 +22,8 @@ You can install MOSD from GitHub directly using devtools.
       library(survival)
       library(survminer)
 	  library(ggplots)
-	  clin <- Surv(as.numeric(survival$Survival), as.numeric(survival$Death))
+	  brca.clin<-x[[3]]
+	  clin <- Surv(as.numeric(brca.clin$futime), as.numeric(brca.clin$fustat))
 	  plot.KM(clin,as.integer(tes$clu))
 
  ```
