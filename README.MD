@@ -12,9 +12,9 @@ You can install MOSD from GitHub directly using devtools.
 ## Example
   ```    
   We used BRCA DNA methylation and miRNA to demonstrate the MOSD 
-	 x<-readRDS("data/BRCA.rds")
+	 data(BRCA)
 	 d<-list(x[[1]],x[[2]])
-	 tes<-MOSD(d,6)
+	 test<-MOSD(d,6)
  ```
 ## compare subtypes outcome
 
