@@ -21,10 +21,10 @@ You can install MOSD from GitHub directly using devtools.
   ```
       library(survival)
       library(survminer)
-	  library(ggplots)
+	  library(ggplot2)
 	  brca.clin<-x[[3]]
 	  clin <- Surv(as.numeric(brca.clin$futime), as.numeric(brca.clin$fustat))
-	  plot.KM(clin,as.integer(tes$clu))
+	  plot.KM(clin,as.integer(test$clu))
 
  ```
 
