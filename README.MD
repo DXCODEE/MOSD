@@ -1,8 +1,6 @@
 # MOSD(Multi-omics integration with weighted affinity and self-diffusion  applied  for cancer subtyping)
 ## MOSD:a R package for multi-omics integration 
 
-Version: 1.0.3
-
 Depends: R(>3.6)
 
 Import packages: survival, survminer, ggplot2
