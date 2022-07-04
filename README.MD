@@ -1,5 +1,5 @@
 # MOSD(Multi-omics integration with weighted affinity and self-diffusion  applied  for cancer subtyping)
-MOSDa R package for multi-omics integration  method
+## MOSD:a R package for multi-omics integration 
 
 Version: 1.0.3
 
