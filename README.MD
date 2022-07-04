@@ -2,9 +2,7 @@
 ## MOSD:a R package for multi-omics integration 
 
 Version: 1.0.3
-
 Depends: R(>3.6)
-
 Import packages: survival, survminer, ggplot2
 
 ### Overview
@@ -17,20 +15,20 @@ You can install MOSD from GitHub directly using devtools.
 
 ## Example
   ```    
-  We used BRCA DNA methylation and miRNA to demonstrate the MOSD 
-	 data(BRCA)
-	 d<-list(x[[1]],x[[2]])
-	 test<-MOSD(d,6)
+  Since mRNA is too large, we used BRCA DNA methylation and miRNA to demonstrate the MOSD 
+  data(BRCA)
+  d<-list(x[[1]],x[[2]])
+  test<-MOSD(d,6)
  ```
 ## compare subtypes outcome
 
   ```
       library(survival)
       library(survminer)
-	  library(ggplot2)
-	  brca.clin<-x[[3]]
-	  clin <- Surv(as.numeric(brca.clin$futime), as.numeric(brca.clin$fustat))
-	  plot.KM(clin,as.integer(test$clu))
+      library(ggplot2)
+      brca.clin<-x[[3]]
+      clin <- Surv(as.numeric(brca.clin$futime), as.numeric(brca.clin$fustat))
+      plot.KM(clin,as.integer(test$clu))
 
  ```
 
