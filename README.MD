@@ -20,15 +20,15 @@ You can install MOSD from GitHub directly using devtools.
   d<-list(x[[1]],x[[2]])
   test<-MOSD(d,6)
  ```
-## compare subtypes outcome
+## Compare subtypes outcome
 
   ```
-      library(survival)
-      library(survminer)
-      library(ggplot2)
-      brca.clin<-x[[3]]
-      clin <- Surv(as.numeric(brca.clin$futime), as.numeric(brca.clin$fustat))
-      plot.KM(clin,as.integer(test$clu))
+  library(survival)
+  library(survminer)
+  library(ggplot2)
+  brca.clin<-x[[3]]
+  clin <- Surv(as.numeric(brca.clin$futime), as.numeric(brca.clin$fustat))
+  plot.KM(clin,as.integer(test$clu))
 
  ```
 
