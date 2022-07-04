@@ -1,6 +1,12 @@
-# MOSD
+# MOSD(Multi-omics integration with weighted affinity and self-diffusion  applied  for cancer subtyping)
+MOSDa R package for multi-omics integration  method
 
-## Multi-omics integration with weighted affinity and self-diffusion  applied  for cancer subtyping
+Version: 1.0.3
+
+Depends: R(>3.6)
+
+Import packages: survival, survminer, ggplot2
+
 ### Overview
 Characterizing cancer molecular subtyping  is crucical for improving  prognosis and individualized treatment.Integrative analysis of genomic data has become an important approach for cancer subtyping.Here,we present multi-omics integration via weighted affinity and self-diffusion(MOSD) to dissect cancer heterogeneity.MOSD first construct local scaling affinity on every data type,and then integrate the affinities by weighted linear combination followed by the self-diffusion  to further improve the samples similarities for the downstream clustering analysis.
 ## Installation
