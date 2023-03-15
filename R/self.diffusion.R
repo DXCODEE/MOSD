@@ -7,9 +7,7 @@
   #' @return diffused graph
   #' @export
   #' @examples
-  #' data(GSE62254_data)
-  #' data1<-apply(GSE62254_gene.expression, 2, function(x) (x-mean(x))/sd(x))
-  #' A<-affs(data1)
+  #' A<-affs(data)
   #' self.diffusion(A,4)
 
    self.diffusion <- function(A,K) {
